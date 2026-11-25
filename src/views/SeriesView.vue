@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Check, ChevronLeft, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
+import { Check, Layers, LibraryBig, Pencil, Plus, Search, Trash2, X } from 'lucide-vue-next'
 import { useLibraryStore } from '@/stores/library'
 import { useUiStore } from '@/stores/ui'
 import BookCover from '@/components/BookCover.vue'
@@ -13,6 +13,8 @@ const library = useLibraryStore()
 const ui = useUiStore()
 
 const modalOpen = ref(false)
+const showSearch = ref(false)
+const searchText = ref('')
 const editingId = ref<string | null>(null)
 const form = reactive({
   name: '',
@@ -47,6 +49,22 @@ const seriesList = computed<SeriesViewModel[]>(() =>
     }
   }),
 )
+
+const filteredSeries = computed(() => {
+  const q = searchText.value.trim().toLowerCase()
+  if (!q) return seriesList.value
+  return seriesList.value.filter(
+    (item) =>
+      item.series.name.toLowerCase().includes(q) ||
+      item.series.author.toLowerCase().includes(q) ||
+      item.books.some((b) => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)),
+  )
+})
+
+function toggleSearch() {
+  showSearch.value = !showSearch.value
+  if (!showSearch.value) searchText.value = ''
+}
 
 function openCreateModal() {
   editingId.value = null
@@ -92,14 +110,46 @@ async function removeSeries() {
 <template>
   <div class="page-scroll series-page">
     <header class="top-bar">
-      <button type="button" class="icon-btn" @click="router.push('/library')">
-        <ChevronLeft :size="20" />
-      </button>
       <h1 class="page-title">SERIES</h1>
-      <button type="button" class="icon-btn icon-btn-accent" @click="openCreateModal()">
-        <Plus :size="18" />
-      </button>
+
+      <div class="header-actions">
+        <button type="button" class="btn btn-surface btn-pill new-btn" @click="openCreateModal()">
+          <Plus :size="15" /> New
+        </button>
+
+        <button type="button" class="icon-btn" aria-label="Library" @click="router.push('/library')">
+          <LibraryBig :size="17" />
+        </button>
+
+        <button type="button" class="icon-btn icon-btn-accent" aria-label="Series tracker" aria-current="page">
+          <Layers :size="17" />
+        </button>
+
+        <button
+          type="button"
+          class="icon-btn"
+          :aria-label="showSearch ? 'Close search' : 'Search series'"
+          @click="toggleSearch()"
+        >
+          <X v-if="showSearch" :size="17" />
+          <Search v-else :size="17" />
+        </button>
+      </div>
     </header>
+
+    <div v-if="showSearch" class="search-wrap">
+      <input
+        v-model="searchText"
+        type="search"
+        class="input"
+        placeholder="Filter by series, author, or book title..."
+        autofocus
+      />
+    </div>
+
+    <p v-if="showSearch && searchText.trim() && seriesList.length && !filteredSeries.length" class="subtle">
+      No series match "{{ searchText.trim() }}".
+    </p>
 
     <div v-if="!seriesList.length" class="card empty-series">
       <p>Track multi-book sagas, trilogies, and companion sets all in one place.</p>
@@ -108,7 +158,7 @@ async function removeSeries() {
       </button>
     </div>
 
-    <article v-for="item in seriesList" :key="item.series.id" class="card series-card">
+    <article v-for="item in filteredSeries" :key="item.series.id" class="card series-card">
       <div class="series-head">
         <div class="series-title-col">
           <div class="series-title-row">
@@ -230,6 +280,19 @@ async function removeSeries() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.new-btn {
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .empty-series {

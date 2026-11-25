@@ -7,6 +7,7 @@ import {
   Check,
   FlipHorizontal2,
   Layers,
+  LibraryBig,
   Paintbrush,
   Search,
   Trash2,
@@ -570,6 +571,16 @@ const selectedLabel = computed(() => {
         </button>
         <button v-else type="button" class="btn btn-accent btn-pill arrange-btn" @click="stopEditing()">
           <Check :size="15" /> Done
+        </button>
+
+        <button
+          v-if="!editing"
+          type="button"
+          class="icon-btn icon-btn-accent"
+          aria-label="Library"
+          aria-current="page"
+        >
+          <LibraryBig :size="17" />
         </button>
 
         <button
