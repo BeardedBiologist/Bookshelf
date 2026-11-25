@@ -19,6 +19,7 @@ import type {
   BookSeries,
   ReadingSession,
   SavedQuote,
+  ShelfItem,
   ShelfStyle,
   UserProfile,
 } from '@/types/models'
@@ -31,6 +32,7 @@ interface LocalPayload {
   series: BookSeries[]
   sessions: ReadingSession[]
   quotes: SavedQuote[]
+  shelfLayout?: ShelfItem[]
 }
 
 function defaultProfile(uid: string, displayName = 'Reader', email = ''): UserProfile {
@@ -59,6 +61,8 @@ export const useLibraryStore = defineStore('library', () => {
   const series = ref<BookSeries[]>([])
   const sessions = ref<ReadingSession[]>([])
   const quotes = ref<SavedQuote[]>([])
+  /** Saved bookshelf arrangement (books + decor). Reconciled with books in `shelfItems`. */
+  const shelfLayout = ref<ShelfItem[]>([])
   const loading = ref(false)
   const activeUid = ref<string | null>(null)
   const useCloud = ref(false)
@@ -130,6 +134,56 @@ export const useLibraryStore = defineStore('library', () => {
     return Math.round((totalPages / totalSeconds) * 3600)
   })
 
+  /**
+   * The arrangement actually shown on the shelf: saved layout with deleted books
+   * dropped, followed by any books not yet placed (oldest first).
+   */
+  const shelfItems = computed<ShelfItem[]>(() => {
+    const bookIds = new Set(books.value.map((b) => b.id))
+    const placed = new Set<string>()
+    const result: ShelfItem[] = []
+    for (const item of shelfLayout.value) {
+      if (item.kind === 'book') {
+        if (!item.bookId || !bookIds.has(item.bookId) || placed.has(item.bookId)) continue
+        placed.add(item.bookId)
+      }
+      result.push(item)
+    }
+    const unplaced = books.value
+      .filter((b) => !placed.has(b.id))
+      .sort((a, b) => a.createdAt - b.createdAt)
+    for (const b of unplaced) {
+      result.push({ id: `book_${b.id}`, kind: 'book', bookId: b.id, flip: false, variant: null })
+    }
+    return result
+  })
+
+  let shelfSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** Replace the shelf arrangement locally right away and persist it (debounced). */
+  function saveShelfLayout(items: ShelfItem[]) {
+    const clean = items.map((i) => ({
+      id: i.id,
+      kind: i.kind,
+      bookId: i.kind === 'book' ? i.bookId : null,
+      flip: Boolean(i.flip),
+      variant: i.variant ?? null,
+    }))
+    shelfLayout.value = clean
+    if (shelfSaveTimer) clearTimeout(shelfSaveTimer)
+    shelfSaveTimer = setTimeout(() => {
+      shelfSaveTimer = null
+      if (useCloud.value && db && activeUid.value) {
+        setDoc(doc(db, 'users', activeUid.value, 'settings', 'shelf'), {
+          items: shelfLayout.value,
+          updatedAt: Date.now(),
+        }).catch((err) => console.error('[Folio] Failed to save shelf layout', err))
+      } else {
+        persistLocal()
+      }
+    }, 500)
+  }
+
   function persistLocal() {
     if (useCloud.value) return
     const payload: LocalPayload = {
@@ -138,6 +192,7 @@ export const useLibraryStore = defineStore('library', () => {
       series: series.value,
       sessions: sessions.value,
       quotes: quotes.value,
+      shelfLayout: shelfLayout.value,
     }
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload))
   }
@@ -166,6 +221,7 @@ export const useLibraryStore = defineStore('library', () => {
           series.value = parsed.series || []
           sessions.value = parsed.sessions || []
           quotes.value = parsed.quotes || []
+          shelfLayout.value = parsed.shelfLayout || []
           applyTheme(profile.value.theme)
           return
         } catch {
@@ -178,6 +234,7 @@ export const useLibraryStore = defineStore('library', () => {
       series.value = sample.series
       sessions.value = sample.sessions
       quotes.value = sample.quotes
+      shelfLayout.value = []
       applyTheme(profile.value.theme)
       persistLocal()
       return
@@ -199,6 +256,15 @@ export const useLibraryStore = defineStore('library', () => {
           applyTheme(initProfile.theme)
           setDoc(userDocRef, initProfile, { merge: true }).catch(() => {})
         }
+      }),
+    )
+
+    unsubs.push(
+      onSnapshot(doc(database, 'users', uid, 'settings', 'shelf'), (snap) => {
+        // Ignore echoes while a local edit is waiting to be saved
+        if (shelfSaveTimer) return
+        const items = snap.exists() ? (snap.data().items as ShelfItem[] | undefined) : undefined
+        shelfLayout.value = Array.isArray(items) ? items : []
       }),
     )
 
@@ -546,6 +612,8 @@ export const useLibraryStore = defineStore('library', () => {
     series,
     sessions,
     quotes,
+    shelfLayout,
+    shelfItems,
     loading,
     useCloud,
     currentlyReading,
@@ -563,6 +631,7 @@ export const useLibraryStore = defineStore('library', () => {
     updatePreferences,
     setTheme,
     setShelfStyle,
+    saveShelfLayout,
     getBookById,
     addBook,
     updateBook,

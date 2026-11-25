@@ -89,6 +89,14 @@ rules_version = '2';
 //      - createdAt: number (required, immutable, Unix ms)
 //      - updatedAt: number (required, Unix ms)
 //
+// 6. Document: /users/{userId}/settings/shelf (Bookshelf arrangement)
+//    Fields (2 required, no extra fields allowed):
+//      - items: list (required, size <= 3000) of
+//          { id: string, kind: 'book'|'space'|'candle'|'bookend'|'plant'|'stack'|'break',
+//            variant: string | null (e.g. bookend style),
+//            bookId: string | null, flip: bool }
+//      - updatedAt: number (required, Unix ms)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -373,6 +381,13 @@ service cloud.firestore {
              isValidEpochMs(data.updatedAt);
     }
 
+    function isValidShelfLayout(data) {
+      return hasExactFields(['items', 'updatedAt']) &&
+             data.items is list &&
+             data.items.size() <= 3000 &&
+             isValidEpochMs(data.updatedAt);
+    }
+
     // ===============================================================
     // Default Deny Rule
     // ===============================================================
@@ -426,6 +441,15 @@ service cloud.firestore {
                          isValidSession(request.resource.data);
         allow update: if isOwner(userId) &&
                          isValidSession(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Per-user settings documents (currently only the bookshelf arrangement)
+      match /settings/{settingId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+                                 settingId == 'shelf' &&
+                                 isValidShelfLayout(request.resource.data);
         allow delete: if isOwner(userId);
       }
 

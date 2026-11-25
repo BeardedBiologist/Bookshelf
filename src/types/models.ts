@@ -100,3 +100,19 @@ export interface BookSearchResult {
 }
 
 export type StatsRange = 'day' | 'week' | 'month'
+
+/** Decorative / layout pieces that can sit on the bookshelf alongside books. */
+export type ShelfDecorKind = 'space' | 'candle' | 'bookend' | 'plant' | 'stack' | 'break'
+export type ShelfItemKind = 'book' | ShelfDecorKind
+export type BookendStyle = 'brass' | 'marble' | 'walnut' | 'moon' | 'cat'
+
+export interface ShelfItem {
+  id: string
+  kind: ShelfItemKind
+  /** Set when kind === 'book' */
+  bookId: string | null
+  /** Mirror the piece horizontally (e.g. left vs right bookend) */
+  flip: boolean
+  /** Style of the piece, e.g. a BookendStyle. null = default */
+  variant?: string | null
+}
