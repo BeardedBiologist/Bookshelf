@@ -1,0 +1,444 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — Folio Personal Reading Tracker PWA
+// ===============================================================
+//
+// Strict single-owner architecture: every document lives under
+// /users/{userId} and is accessible ONLY to the authenticated owner
+// (request.auth != null && request.auth.uid == userId).
+// All timestamps are numeric Unix timestamps in milliseconds.
+//
+// 1. Collection: /users/{userId} (UserProfile)
+//    Document ID: Firebase Auth UID (must equal uid field)
+//    Contains PII (email, displayName) — owner-only read/write.
+//    Fields (10 required, no extra fields allowed):
+//      - uid: string (required, immutable, must equal userId & request.auth.uid)
+//      - displayName: string (required, 0..100 chars)
+//      - email: string (required, 0..200 chars, empty or valid email format)
+//      - theme: string (required, enum: 'rose-gold' | 'sage' | 'lavender' | 'amber')
+//      - shelfStyle: string (required, enum: 'walnut' | 'oak' | 'espresso' | 'minimal')
+//      - showSpiceRating: bool (required)
+//      - dailyPageGoal: number (required, 1..5000)
+//      - yearlyBookGoal: number (required, 1..2000)
+//      - createdAt: number (required, immutable, Unix ms 0..8640000000000000)
+//      - updatedAt: number (required, Unix ms 0..8640000000000000)
+//
+// 2. Collection: /users/{userId}/books/{bookId} (Book)
+//    Document ID: client-generated or Firestore auto ID
+//    Fields (24 required, no extra fields allowed):
+//      - title: string (required, 1..300 chars)
+//      - author: string (required, 0..300 chars)
+//      - coverUrl: string (required, 0..50000 chars, empty / http(s) / image data URL)
+//      - isbn: string (required, 0..40 chars)
+//      - format: string (required, enum: 'Paperback' | 'Hardcover' | 'eBook' | 'Audiobook')
+//      - totalPages: number (required, 0..50000)
+//      - currentPage: number (required, 0..50000)
+//      - status: string (required, enum: 'reading' | 'tbr' | 'finished' | 'dnf' | 'wishlist')
+//      - ownership: string (required, enum: 'owned' | 'wishlist' | 'borrowed' | 'library' | 'kindle-unlimited')
+//      - rating: number (required, 0..5)
+//      - spice: number (required, 0..5)
+//      - isFavorite: bool (required)
+//      - blurb: string (required, 0..10000 chars)
+//      - genres: list<string> (required, size <= 20, aggregate <= 1200 chars)
+//      - moods: list<string> (required, size <= 25, aggregate <= 1500 chars)
+//      - tropes: list<string> (required, size <= 40, aggregate <= 2400 chars)
+//      - review: string (required, 0..20000 chars)
+//      - seriesId: string | null (required, if string: 1..120 chars)
+//      - seriesOrder: number | null (required, if number: 0..5000)
+//      - releaseDate: string | null (required, if string: YYYY-MM-DD / ISO UTC, <= 20 chars)
+//      - startedAt: string | null (required, if string: YYYY-MM-DD / ISO UTC, <= 20 chars)
+//      - finishedAt: string | null (required, if string: YYYY-MM-DD / ISO UTC, <= 20 chars)
+//      - createdAt: number (required, immutable, Unix ms)
+//      - updatedAt: number (required, Unix ms)
+//
+// 3. Collection: /users/{userId}/series/{seriesId} (BookSeries)
+//    Document ID: client-generated or Firestore auto ID
+//    Fields (6 required, no extra fields allowed):
+//      - name: string (required, 1..200 chars)
+//      - author: string (required, 0..200 chars)
+//      - totalBooks: number | null (required, if number: 1..500)
+//      - notes: string (required, 0..5000 chars)
+//      - createdAt: number (required, immutable, Unix ms)
+//      - updatedAt: number (required, Unix ms)
+//
+// 4. Collection: /users/{userId}/sessions/{sessionId} (ReadingSession)
+//    Document ID: client-generated or Firestore auto ID
+//    Fields (10 required, no extra fields allowed):
+//      - bookId: string (required, 1..120 chars)
+//      - bookTitle: string (required, 0..300 chars)
+//      - bookCoverUrl: string (required, 0..50000 chars, empty / http(s) / image data URL)
+//      - date: string (required, YYYY-MM-DD, exact 10 chars)
+//      - startPage: number (required, 0..50000)
+//      - endPage: number (required, 0..50000)
+//      - pagesRead: number (required, 0..50000)
+//      - durationSeconds: number (required, 0..864000)
+//      - startedAt: number (required, Unix ms)
+//      - endedAt: number (required, Unix ms, >= startedAt)
+//
+// 5. Collection: /users/{userId}/quotes/{quoteId} (SavedQuote)
+//    Document ID: client-generated or Firestore auto ID
+//    Fields (9 required, no extra fields allowed):
+//      - bookId: string | null (required, if string: 1..120 chars)
+//      - bookTitle: string (required, 0..300 chars)
+//      - bookAuthor: string (required, 0..300 chars)
+//      - bookCoverUrl: string (required, 0..50000 chars, empty / http(s) / image data URL)
+//      - text: string (required, 1..5000 chars)
+//      - page: number | null (required, if number: 0..50000)
+//      - isFavorite: bool (required)
+//      - createdAt: number (required, immutable, Unix ms)
+//      - updatedAt: number (required, Unix ms)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the request is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user owns the userId path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Verify uid field matches the authenticated user on create
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    // Ensure uid field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate required fields exist on the resulting document
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate the resulting document contains only allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Enforce exact schema (all required fields present, no extraneous fields)
+    function hasExactFields(fields) {
+      return hasOnlyAllowedFields(fields) && hasRequiredFields(fields);
+    }
+
+    // Ensure immutable fields were not added, removed, or modified on update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Validate string type and inclusive length bounds
+    function isValidString(val, minLen, maxLen) {
+      return val is string &&
+        val.size() >= minLen &&
+        val.size() <= maxLen;
+    }
+
+    // Validate nullable string type and inclusive length bounds
+    function isValidNullableString(val, minLen, maxLen) {
+      return val == null || isValidString(val, minLen, maxLen);
+    }
+
+    // Validate numeric type (int or float) and inclusive range bounds
+    function isValidNumberRange(val, minVal, maxVal) {
+      return val is number &&
+        val >= minVal &&
+        val <= maxVal;
+    }
+
+    // Validate nullable numeric type and inclusive range bounds
+    function isValidNullableNumberRange(val, minVal, maxVal) {
+      return val == null || isValidNumberRange(val, minVal, maxVal);
+    }
+
+    // Validate numeric Unix epoch timestamp in milliseconds (valid JS Date range)
+    function isValidEpochMs(val) {
+      return val is number &&
+        val >= 0 &&
+        val <= 8640000000000000;
+    }
+
+    // Validate email format and length
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() <= 200 &&
+        email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    }
+
+    // Validate profile email (empty string or valid email, <= 200 chars)
+    function isValidProfileEmail(email) {
+      return email is string &&
+        email.size() <= 200 &&
+        (email == '' || isValidEmail(email));
+    }
+
+    // Validate cover URL: empty string, http(s) URL, or inline raster/SVG image data URL
+    // Rejects javascript:/data:text/html schemes and enforces 50,000 char ceiling
+    function isValidCoverUrl(url) {
+      return url is string &&
+        url.size() <= 50000 &&
+        (url == '' ||
+         url.matches('^https://.*') ||
+         url.matches('^http://.*') ||
+         url.matches('^data:image/(svg\\+xml|png|jpeg|jpg|webp)[;,].*'));
+    }
+
+    // Validate strict YYYY-MM-DD local date key (10 chars)
+    function isValidDateKey(val) {
+      return val is string &&
+        val.size() == 10 &&
+        val.matches('^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$');
+    }
+
+    // Validate nullable date string (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ, <= 20 chars)
+    function isValidNullableDateString(val) {
+      return val == null ||
+        (val is string &&
+         val.size() <= 20 &&
+         val.matches('^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])(T\\d{2}:\\d{2}:\\d{2}Z)?$'));
+    }
+
+    // Validate list of strings with item count and total aggregate character limits.
+    // Calling .join(',') rejects non-string elements and prevents oversized element payloads.
+    function isValidStringList(val, maxItems, maxTotalChars) {
+      return val is list &&
+        val.size() <= maxItems &&
+        (val.size() == 0 || val.join(',').size() <= maxTotalChars);
+    }
+
+    // ===============================================================
+    // Domain Validators (Invoked on BOTH create and update)
+    // ===============================================================
+
+    function isValidUserProfile(data, userId) {
+      return hasExactFields([
+               'uid',
+               'displayName',
+               'email',
+               'theme',
+               'shelfStyle',
+               'showSpiceRating',
+               'dailyPageGoal',
+               'yearlyBookGoal',
+               'createdAt',
+               'updatedAt'
+             ]) &&
+             data.uid is string &&
+             data.uid == userId &&
+             isValidString(data.displayName, 0, 100) &&
+             isValidProfileEmail(data.email) &&
+             data.theme is string &&
+             data.theme in ['rose-gold', 'sage', 'lavender', 'amber'] &&
+             data.shelfStyle is string &&
+             data.shelfStyle in ['walnut', 'oak', 'espresso', 'minimal'] &&
+             data.showSpiceRating is bool &&
+             isValidNumberRange(data.dailyPageGoal, 1, 5000) &&
+             isValidNumberRange(data.yearlyBookGoal, 1, 2000) &&
+             isValidEpochMs(data.createdAt) &&
+             isValidEpochMs(data.updatedAt);
+    }
+
+    function isValidBook(data) {
+      return hasExactFields([
+               'title',
+               'author',
+               'coverUrl',
+               'isbn',
+               'format',
+               'totalPages',
+               'currentPage',
+               'status',
+               'ownership',
+               'rating',
+               'spice',
+               'isFavorite',
+               'blurb',
+               'genres',
+               'moods',
+               'tropes',
+               'review',
+               'seriesId',
+               'seriesOrder',
+               'releaseDate',
+               'startedAt',
+               'finishedAt',
+               'createdAt',
+               'updatedAt'
+             ]) &&
+             isValidString(data.title, 1, 300) &&
+             isValidString(data.author, 0, 300) &&
+             isValidCoverUrl(data.coverUrl) &&
+             isValidString(data.isbn, 0, 40) &&
+             data.format is string &&
+             data.format in ['Paperback', 'Hardcover', 'eBook', 'Audiobook'] &&
+             isValidNumberRange(data.totalPages, 0, 50000) &&
+             isValidNumberRange(data.currentPage, 0, 50000) &&
+             data.status is string &&
+             data.status in ['reading', 'tbr', 'finished', 'dnf', 'wishlist'] &&
+             data.ownership is string &&
+             data.ownership in ['owned', 'wishlist', 'borrowed', 'library', 'kindle-unlimited'] &&
+             isValidNumberRange(data.rating, 0, 5) &&
+             isValidNumberRange(data.spice, 0, 5) &&
+             data.isFavorite is bool &&
+             isValidString(data.blurb, 0, 10000) &&
+             isValidStringList(data.genres, 20, 1200) &&
+             isValidStringList(data.moods, 25, 1500) &&
+             isValidStringList(data.tropes, 40, 2400) &&
+             isValidString(data.review, 0, 20000) &&
+             isValidNullableString(data.seriesId, 1, 120) &&
+             isValidNullableNumberRange(data.seriesOrder, 0, 5000) &&
+             isValidNullableDateString(data.releaseDate) &&
+             isValidNullableDateString(data.startedAt) &&
+             isValidNullableDateString(data.finishedAt) &&
+             isValidEpochMs(data.createdAt) &&
+             isValidEpochMs(data.updatedAt);
+    }
+
+    function isValidSeries(data) {
+      return hasExactFields([
+               'name',
+               'author',
+               'totalBooks',
+               'notes',
+               'createdAt',
+               'updatedAt'
+             ]) &&
+             isValidString(data.name, 1, 200) &&
+             isValidString(data.author, 0, 200) &&
+             isValidNullableNumberRange(data.totalBooks, 1, 500) &&
+             isValidString(data.notes, 0, 5000) &&
+             isValidEpochMs(data.createdAt) &&
+             isValidEpochMs(data.updatedAt);
+    }
+
+    function isValidSession(data) {
+      return hasExactFields([
+               'bookId',
+               'bookTitle',
+               'bookCoverUrl',
+               'date',
+               'startPage',
+               'endPage',
+               'pagesRead',
+               'durationSeconds',
+               'startedAt',
+               'endedAt'
+             ]) &&
+             isValidString(data.bookId, 1, 120) &&
+             isValidString(data.bookTitle, 0, 300) &&
+             isValidCoverUrl(data.bookCoverUrl) &&
+             isValidDateKey(data.date) &&
+             isValidNumberRange(data.startPage, 0, 50000) &&
+             isValidNumberRange(data.endPage, 0, 50000) &&
+             isValidNumberRange(data.pagesRead, 0, 50000) &&
+             isValidNumberRange(data.durationSeconds, 0, 864000) &&
+             isValidEpochMs(data.startedAt) &&
+             isValidEpochMs(data.endedAt) &&
+             data.endedAt >= data.startedAt;
+    }
+
+    function isValidQuote(data) {
+      return hasExactFields([
+               'bookId',
+               'bookTitle',
+               'bookAuthor',
+               'bookCoverUrl',
+               'text',
+               'page',
+               'isFavorite',
+               'createdAt',
+               'updatedAt'
+             ]) &&
+             isValidNullableString(data.bookId, 1, 120) &&
+             isValidString(data.bookTitle, 0, 300) &&
+             isValidString(data.bookAuthor, 0, 300) &&
+             isValidCoverUrl(data.bookCoverUrl) &&
+             isValidString(data.text, 1, 5000) &&
+             isValidNullableNumberRange(data.page, 0, 50000) &&
+             data.isFavorite is bool &&
+             isValidEpochMs(data.createdAt) &&
+             isValidEpochMs(data.updatedAt);
+    }
+
+    // ===============================================================
+    // Default Deny Rule
+    // ===============================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // User-Scoped Collections (Strict Single-Owner Isolation)
+    // ===============================================================
+
+    // User profile & preferences (contains PII — owner-only access)
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+                       uidUnchanged() &&
+                       isValidUserProfile(request.resource.data, userId);
+      allow update: if isOwner(userId) &&
+                       uidNotModified() &&
+                       areImmutableFieldsUnchanged(['uid', 'createdAt']) &&
+                       isValidUserProfile(request.resource.data, userId);
+      allow delete: if isOwner(userId);
+
+      // Personal library books
+      match /books/{bookId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidBook(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         areImmutableFieldsUnchanged(['createdAt']) &&
+                         isValidBook(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Book series tracker
+      match /series/{seriesId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidSeries(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         areImmutableFieldsUnchanged(['createdAt']) &&
+                         isValidSeries(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Reading sessions log
+      match /sessions/{sessionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidSession(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         isValidSession(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Saved book quotes
+      match /quotes/{quoteId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidQuote(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         areImmutableFieldsUnchanged(['createdAt']) &&
+                         isValidQuote(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

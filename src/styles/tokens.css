@@ -1,0 +1,90 @@
+:root,
+[data-theme='rose-gold'] {
+  --bg-app: #0d0c0c;
+  --bg-shell: #110f0f;
+  --bg-surface: #252121;
+  --bg-surface-elevated: #2e2929;
+  --bg-surface-hover: #383232;
+  --bg-surface-deep: #181515;
+  --bg-input: #171414;
+  --bg-dock: rgba(20, 17, 17, 0.92);
+
+  --accent: #c89685;
+  --accent-strong: #d7a695;
+  --accent-soft: rgba(200, 150, 133, 0.16);
+  --accent-border: rgba(200, 150, 133, 0.45);
+  --accent-glow: rgba(200, 150, 133, 0.22);
+  --accent-on: #191311;
+  --accent-bronze: #7e5c4e;
+
+  --sage: #80958b;
+  --sage-soft: rgba(128, 149, 139, 0.25);
+  --sage-tile: #6b7d75;
+
+  --cream: #f4efe9;
+  --cream-text: #1c1817;
+
+  --text-primary: #f5f0ec;
+  --text-secondary: #b0a6a1;
+  --text-muted: #7f7672;
+
+  --border-subtle: rgba(255, 245, 238, 0.08);
+  --border-strong: rgba(255, 245, 238, 0.15);
+
+  --chart-1: #829c94;
+  --chart-2: #c99482;
+  --chart-3: #8c7a72;
+  --chart-4: #a88770;
+  --chart-5: #6c7c85;
+  --chart-6: #9a7c8c;
+}
+
+[data-theme='sage'] {
+  --accent: #8ead9b;
+  --accent-strong: #a3c2b0;
+  --accent-soft: rgba(142, 173, 155, 0.16);
+  --accent-border: rgba(142, 173, 155, 0.45);
+  --accent-glow: rgba(142, 173, 155, 0.22);
+  --accent-on: #111814;
+  --accent-bronze: #526a5d;
+  --sage: #c89685;
+  --sage-tile: #63796c;
+}
+
+[data-theme='lavender'] {
+  --accent: #b7a1cf;
+  --accent-strong: #cab6df;
+  --accent-soft: rgba(183, 161, 207, 0.16);
+  --accent-border: rgba(183, 161, 207, 0.45);
+  --accent-glow: rgba(183, 161, 207, 0.22);
+  --accent-on: #18131f;
+  --accent-bronze: #6b5882;
+  --sage: #829c94;
+  --sage-tile: #6a627b;
+}
+
+[data-theme='amber'] {
+  --accent: #d4a66a;
+  --accent-strong: #e3b87e;
+  --accent-soft: rgba(212, 166, 106, 0.16);
+  --accent-border: rgba(212, 166, 106, 0.45);
+  --accent-glow: rgba(212, 166, 106, 0.22);
+  --accent-on: #1d160c;
+  --accent-bronze: #85653e;
+  --sage: #829c94;
+  --sage-tile: #7d6d56;
+}
+
+:root {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-height: 76px;
+}
