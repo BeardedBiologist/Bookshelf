@@ -512,6 +512,10 @@ async function confirmDeleteBook() {
       <p v-else class="subtle small-empty">Save memorable lines from this book.</p>
     </section>
 
+    <button type="button" class="btn btn-surface full remove-book-btn" @click="confirmDeleteOpen = true">
+      <Trash2 :size="16" /> Remove from library
+    </button>
+
     <!-- Update Progress Sheet -->
     <Transition name="fade">
       <div v-if="progressModalOpen" class="sheet-backdrop" @click.self="progressModalOpen = false">
@@ -718,6 +722,15 @@ async function confirmDeleteBook() {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+}
+
+.remove-book-btn {
+  margin-top: 8px;
+  color: #e07a6e;
+  gap: 8px;
 }
 
 .pill-select {
@@ -729,6 +742,8 @@ async function confirmDeleteBook() {
   padding: 0 26px 0 14px;
   font-size: 13px;
   font-weight: 700;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .pill-select.accent {
@@ -750,6 +765,9 @@ async function confirmDeleteBook() {
   font: inherit;
   outline: none;
   cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
 }
 
 .pill-select .chev {
