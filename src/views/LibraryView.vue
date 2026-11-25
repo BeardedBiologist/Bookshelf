@@ -59,8 +59,19 @@ function toggleSearch() {
 
 const isFiltering = computed(() => filterStatus.value !== 'all' || searchText.value.trim() !== '')
 
+/** A book counts as wishlist if either its reading status or its ownership says so. */
+function isWishlist(b: Book): boolean {
+  return b.status === 'wishlist' || b.ownership === 'wishlist'
+}
+
+function matchesStatus(b: Book): boolean {
+  if (filterStatus.value === 'all') return true
+  if (filterStatus.value === 'wishlist') return isWishlist(b)
+  return b.status === filterStatus.value
+}
+
 function matchesFilter(b: Book): boolean {
-  if (filterStatus.value !== 'all' && b.status !== filterStatus.value) return false
+  if (!matchesStatus(b)) return false
   const q = searchText.value.trim().toLowerCase()
   if (!q) return true
   return (
@@ -781,7 +792,7 @@ const selectedLabel = computed(() => {
                 :src="booksById.get(cell.item.bookId!)!.coverUrl"
                 :title="booksById.get(cell.item.bookId!)!.title"
                 :author="booksById.get(cell.item.bookId!)!.author"
-                :dimmed="booksById.get(cell.item.bookId!)!.status === 'wishlist'"
+                :dimmed="filterStatus !== 'wishlist' && isWishlist(booksById.get(cell.item.bookId!)!)"
                 radius="5px"
               />
               <span v-if="booksById.get(cell.item.bookId!)!.status === 'finished'" class="shelf-dot" />
