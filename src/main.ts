@@ -6,7 +6,10 @@ import { router } from './router'
 import './styles/tokens.css'
 import './styles/base.css'
 
+import { installViewportGapFix } from './utils/viewportFix'
+
 registerSW({ immediate: true })
+installViewportGapFix()
 
 const app = createApp(App)
 app.use(createPinia())

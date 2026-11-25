@@ -85,6 +85,11 @@
   --radius-pill: 999px;
 
   --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Set at runtime by utils/viewportFix.ts on iOS standalone; 0 elsewhere */
+  --viewport-gap: 0px;
+  /* iOS standalone can shrink the web view so it no longer overlaps the home
+     indicator, yet still report the full inset. Subtract the gap so we don't
+     double-pad the bottom. */
+  --safe-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--viewport-gap)));
   --nav-height: 76px;
 }
